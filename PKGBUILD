@@ -1,0 +1,75 @@
+# Maintainer: rtfreedman  <rob<d0t>til<d0t>freedman< T>googlemail<d0t>com>
+# Contributor: Doug Newgard <scimmia22 at outlook dot com>
+
+pkgname=exfat
+pkgver=1.2.4
+pkgrel=8
+pkgdesc="Native kernel module for EXtended FAT support"
+arch=('i686' 'x86_64')
+url="http://opensource.samsung.com/"
+license=('GPL')
+depends=('linux>=3.0' 'linux<3.12')
+makedepends=('linux-headers')
+provides=('exfat')
+conflicts=('exfat-git')
+#
+install="$pkgname.install"
+options=('!strip')
+# Go to the URL and search for exfat. You need to download the source yourself 
+# and put the zip file in the same dir as the PKGBUILD file.
+source=("${pkgname}_${pkgver}.zip"
+        "3.9-compat.patch"
+        "3.10-compat.patch"
+        "3.11-compat.patch"
+        "3.12-compat.patch"
+        "add-module-alias.patch")
+        
+sha256sums=('4cb39c4f44b7a68cc391596384744a32f948ba659697542ff771764b215810f3'
+            'ddc89bccd6b9b6c74a726f1623beaced757772f35794e47f0772562cef7b85d5'
+            '41ef7b3de12f2bcc02246b2ddfb50100dfab327ec2b61916a09935cbe075a0bb'
+            '5df98a2d6a861f631e4b10d0927ae042ef85f649356b58da8cf4824e2a6fdf80'
+            '9535dae37a1b86da7e92954d16e61648ae430d0ad6e0c3eb1860a594c92467d5'
+            '69640bc2793d62603d3be410e394fec068888a6a3668916fa90b60c7cca990fd')
+
+prepare() {
+  cd "$srcdir"
+
+  patch -Np1 < 3.9-compat.patch
+  patch -Np1 < 3.10-compat.patch
+  patch -Np1 < 3.11-compat.patch
+  patch -Np1 < 3.12-compat.patch
+  patch -Np1 < add-module-alias.patch
+}
+
+# Find all kernels and extramodule directories
+KERNELS=`cat /usr/lib/modules/extramodules*/version`
+XTRAMOD=`find /usr/lib/modules -name version | sed 's|\/usr\/lib\/modules\/||; s|\/version||'`
+
+build() {
+  cd "$srcdir"
+  for _kernver in $KERNELS; do
+    echo Building module for $_kernver
+    make -C /usr/lib/modules/$_kernver/build M="$PWD" modules
+    mkdir -p $_kernver
+    mv exfat_core.ko exfat_fs.ko $_kernver
+    rm *.o .exfat*.cmd
+  done
+}
+
+package() {
+  cd "$srcdir"
+  # Loop through all detected kernels
+  for _kernver in $KERNELS; do
+	# Loop through all detected extramodules directories
+	for _mod_dir in $XTRAMOD; do
+	  # Check which extramodules directory corresponds with the built module
+	  if [ $(cat "/usr/lib/modules/${_mod_dir}/version") = ${_kernver} ]; then
+	    gzip ${_kernver}/exfat_core.ko ${_kernver}/exfat_fs.ko
+	    install -m755 -d "${pkgdir}/usr/lib/modules/${_mod_dir}/"
+	    install -m644 -t "${pkgdir}/usr/lib/modules/${_mod_dir}/" \
+			${_kernver}/exfat_core.ko.gz ${_kernver}/exfat_fs.ko.gz
+	  fi
+	done
+  done
+}
+
